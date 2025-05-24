@@ -1,0 +1,43 @@
+{
+    "SOURCE": "input_videos/video2.mp4",
+    "MODEL_PATH": "models/yolo11s.pt",
+    "MODEL_CONF": 0.25,
+    "MODEL_IOU": 0.7,
+    "MODEL_IMGSZ": 928,
+    "QUEUE_SIZE": 2,
+    "MISSING_THRESH": 100,
+    "LOG_LEVEL": "DEBUG",
+    "DEFAULT_ROI": [
+        [
+            0.026041666666666668,
+            0.4962962962962963
+        ],
+        [
+            0.3802083333333333,
+            0.46574074074074073
+        ],
+        [
+            0.6052083333333333,
+            0.9972222222222222
+        ],
+        [
+            0.057291666666666664,
+            0.9981481481481481
+        ],
+        [
+            0.007291666666666667,
+            0.7703703703703704
+        ],
+        [
+            0.014583333333333334,
+            0.5851851851851851
+        ]
+    ],
+    "SHOW_INFERENCE": true,
+    "SAVE_INFERENCE": true,
+    "SAVE_VIDEO_PATH": "output/output.avi",
+    "SAVE_INFERENCE_SIZE": [
+        1280,
+        720
+    ]
+}
