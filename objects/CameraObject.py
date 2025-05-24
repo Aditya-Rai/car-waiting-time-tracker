@@ -14,7 +14,7 @@ from utils.utils import create_logger, get_iou, get_waiting_time
 
 
 class CameraObject:
-    def __init__(self):
+    def __init__(self,streamer_queue):
         # Initialize logger for this class
         self.logger = create_logger("CameraObject", 1)
 
@@ -70,12 +70,19 @@ class CameraObject:
                     self.logger.warning("File name not found, defaulting to output.avi")
 
                 os.makedirs(dir_name, exist_ok=True)
+
+                ext = os.path.splitext(file_name)[1].lower()
+                if ext == ".mp4":
+                    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # Use MP4 codec
+                elif ext == ".avi":
+                    fourcc = cv2.VideoWriter_fourcc(*"MJPG")  # Use MJPG for AVI
+
                 save_path = os.path.join(dir_name, file_name)
                 self.logger.info(f"Saving the output video at: {save_path}")
 
                 self.video_writer = cv2.VideoWriter(
                     save_path,
-                    cv2.VideoWriter_fourcc(*'MJPG'),
+                    fourcc,
                     self.fps,
                     self.save_inference_size
                 )
@@ -92,6 +99,7 @@ class CameraObject:
         self.detection_queue = Queue(maxsize=self.queue_size)
         self.processing_queue = Queue(maxsize=self.queue_size)
         self.writer_queue = Queue(maxsize=self.queue_size)
+        self.streamer_queue = streamer_queue
 
         # Load the YOLO detection model
         self.logger.info("LOADING the car detection model")
@@ -110,6 +118,7 @@ class CameraObject:
 
         self.temp_roi = []       # Temporary ROI drawn by the user
         self.inference_frame = None  # Current frame for inference display
+        self.frame_counter = 0
 
     def save_config(self):
         try:
@@ -234,7 +243,7 @@ class CameraObject:
                 return
             self.denorm_roi = self.get_camera_roi(self.temp_roi)
             self.roi = self.temp_roi
-            self.logger.info(f"ROI: {self.roi}")
+            self.logger.info(f"Updated ROI: {self.roi}")
             self.temp_roi = []
 
             # Save the updated normalized ROI to config.json
@@ -270,8 +279,8 @@ class CameraObject:
                     while self.reader_queue.full():
                         time.sleep(0.01)
                         continue
-                    
-                    data = {"frame":frame,"frame_start_time":time.time()}       # putting the data inside the reader queue
+                    self.frame_counter += 1
+                    data = {"frame":frame,"frame_counter":self.frame_counter,"frame_start_time":time.time()}       # putting the data inside the reader queue
                     self.reader_queue.put(data)   
                     
             except Exception as e:
@@ -292,14 +301,13 @@ class CameraObject:
             frame = data["frame"]
             frame_preprocess = self.preprocess_frame(frame.copy())
 
-            print(f"reading frame")
             detections = {}
             try:
                 start_time = time.time()
                 # results = self.det_model.predict(frame.copy(),imgsz=MODEL_IMGSZ,conf=MODEL_CONF, iou=MODEL_IOU,verbose=False)[0]
                 # print(results)
                 results = self.det_model.predict(frame_preprocess.copy(),imgsz=self.model_imgsz,conf=self.model_conf, iou=self.model_iou,classes=[2],verbose=False)[0]
-                print(f"Detection time : {time.time() - start_time}")
+                # print(f"Detection time : {time.time() - start_time}")
                 norm_bboxes = results.boxes.xyxyn.detach().cpu().numpy()
                 
                 denorm_bboxes = results.boxes.data.detach().cpu().numpy()
@@ -315,7 +323,7 @@ class CameraObject:
                 start_time = time.time()
                 # tracking based on the detections
                 track_list  = self.tracker.update(denorm_bboxes)
-                print(f"Tracking time : {time.time() - start_time}")
+                # print(f"Tracking time : {time.time() - start_time}")
                 id_list = [t.track_id for t in track_list]  # Get id list
                 box_list = [t.tlbr for t in track_list]     # Get box list
                 conf_list = [t.score for t in track_list]   # Get conf scores
@@ -341,7 +349,7 @@ class CameraObject:
                 for key in temp_current_frame_data.keys():
                     track_id = temp_current_frame_data[key]["track_id"]
                     current_frame_data[track_id] = temp_current_frame_data[key]
-                print(f"Matching time : {time.time() - start_time}")
+                # print(f"Matching time : {time.time() - start_time}")
                 data["current_frame_data"] = current_frame_data
                 
                 while self.processing_queue.full():
@@ -423,10 +431,12 @@ class CameraObject:
             if self.writer_queue.empty():
                 time.sleep(0.01)
                 continue
+                
             start_time = time.time()
             try:
                 data = self.writer_queue.get()
                 frame = data["frame"]
+                frame_counter = data["frame_counter"]
                 tracked_data = data["tracked_data"]
                 for key in tracked_data.keys():
                     current_car = tracked_data[key]
@@ -476,10 +486,14 @@ class CameraObject:
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 255), 2)
 
 
-                print(f"Display Time : {time.time()-start_time}")
+                # print(f"Display Time : {time.time()-start_time}")
+                print(f"Processing frame number : {frame_counter}")
                 self.inference_frame = frame
-                cv2.namedWindow("Inference Window", flags=cv2.WINDOW_GUI_NORMAL)
-                cv2.setMouseCallback("Inference Window",self.click_event)
+                # cv2.namedWindow("Inference Window", flags=cv2.WINDOW_GUI_NORMAL)
+                if self.show_inference:
+                    cv2.namedWindow("Inference Window", cv2.WINDOW_NORMAL)
+                    # cv2.setWindowProperty("Inference Window", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+                    cv2.setMouseCallback("Inference Window",self.click_event)
                 denormalized_points = []
          
                 # print(frame.shape)
@@ -494,6 +508,9 @@ class CameraObject:
                 
 
                 writer_frame = cv2.resize(self.inference_frame,self.save_inference_size)
+                if self.streamer_queue.full():
+                    self.streamer_queue.get()
+                self.streamer_queue.put(writer_frame)
 
                 if self.save_inference:
                     self.video_writer.write(writer_frame)
@@ -506,6 +523,7 @@ class CameraObject:
             except Exception as e:
                 self.logger.error(f"Error in writer thread : {e}",exc_info=True)
                 self.stop()
+        self.video_writer.release()
         
         
     def start(self):
@@ -535,7 +553,8 @@ class CameraObject:
         for thread in self.all_threads:
             thread.join()
             self.logger.info(f"Thread {thread.name} stopped")
-        self.video_writer.release()
+        if self.save_inference:
+            self.video_writer.release()
             
             
             

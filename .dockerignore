@@ -79,3 +79,13 @@ models/
 *.avi
 logs/
 *.pt
+output/
+*.pyc
+docker_output/
+constants.py
+Dockerfile_old
+yolo_inference.py
+raw_input_videos/
+logs/
+logs_backup/
+output

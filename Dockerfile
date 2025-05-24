@@ -18,13 +18,17 @@ RUN apt-get update && apt-get install -y \
 
 # Copy requirements and install them
 COPY requirements.txt .
+
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the entire project
 COPY . .
 
-# Create folders if they don’t exist
-RUN mkdir -p input_videos output logs
+# Create folders (just in case)
+RUN mkdir -p input_videos
 
-# Set default command
+# Expose the Flask port
+EXPOSE 5010
+
+# Default command
 CMD ["python", "main.py", "--logs", "logs"]

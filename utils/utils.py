@@ -4,10 +4,9 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 import os
 
-from constants import LOG_LEVEL
 
 
-def create_logger(path,backup_count):
+def create_logger(path,backup_count,LOG_LEVEL="INFO"):
     
     # Create a logger object specific to the camera_name
     log_directory = "logs"
